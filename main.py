@@ -1,3 +1,5 @@
+import time
+
 import requests
 import smtplib
 from bs4 import BeautifulSoup
@@ -12,10 +14,12 @@ class tflUpdater():
     username = ""
     password = ""
     email = ""
-    journey = []
+    journey = {}
+
+    needs_update = False
+    delayed_journeys = []
 
     def get_user_prefs(self):
-
         if os.path.exists(self.filename):
             f = open(self.filename, 'r')
             prefs = json.loads(json.load(f))
@@ -36,14 +40,14 @@ class tflUpdater():
             print("Enter X to exit")
             while not finished:
                 line = input().title()
-                if line == 'X':
+                if line == 'X' or line == 'exit':
                     break
-                self.journey.append(line)
+                self.journey[line] = "Good Service"
             data = json.dumps({
                 "Username": self.username,
                 "Password": self.password,
                 "Email": self.email,
-                "Journey": list(set(self.journey))
+                "Journey": self.journey
             })
             json.dump(data, f)
             print("Preferences saved")
@@ -51,18 +55,21 @@ class tflUpdater():
     def get_service_updates(self):
         URL = "https://tfl.gov.uk/tube-dlr-overground/status/"
 
-        headers ={"User-Agent":
-                      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/77.0.3865.90 Safari/537.36'}
+        headers = {"User-Agent":
+                       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_0) AppleWebKit/537.36 (KHTML, like Gecko) ' \
+                       'Chrome/77.0.3865.90 Safari/537.36'}
 
         page = requests.get(URL, headers=headers)
         html = BeautifulSoup(page.content, 'html.parser')
         line_table = html.find(id="rainbow-list-tube-dlr-overground-tflrail-tram")
 
         for line in line_table.findAll('li'):
-            if len(line['class']) > 2:
-                self.lines[line['class'][1].capitalize()] = line['class'][2].capitalize()
-            else:
-                self.lines[line['class'][1].capitalize()] = 'Good Service'
+            if line in self.journey:
+                if len(line['class']) > 2 and self.journey[line] == "Good Service":
+                    self.journey[line] = line['class'][2].capitalize()
+                    self.needs_update = True
+                elif len(line['class']) == 2 and self.journey[line] != "Good Service":
+                    self.journey[line] = 'Good Service'
 
     def send_mail(self):
         server = smtplib.SMTP('smtp.gmail.com', 587)
@@ -74,19 +81,29 @@ class tflUpdater():
 
         subject = 'Delays on your journey'
 
-        body = 'There are delays on the {} lines'.format(', '.join(self.delayed_lines))
+        delayed_lines = []
+        for line in self.journey:
+            if self.journey[line] != "Good Service":
+                delayed_lines.append(line)
+
+        body = 'There are delays on the {} lines'.format(', '.join(delayed_lines))
 
         message = f"Subject: {subject}\n\n{body}"
         server.sendmail(self.username,
                         self.email,
                         message)
         print('message sent')
+        self.needs_update = False
         server.quit()
+
+    def run(self):
+        self.get_service_updates()
+        if self.needs_update:
+            self.send_mail()
+        time.sleep(900)
 
 
 if __name__ == "__main__":
-    delays = ["Central"]
     tfl_updater = tflUpdater()
     tfl_updater.get_user_prefs()
-    tfl_updater.get_service_updates()
-    tfl_updater.send_mail(delays)
+    tfl_updater.run()
