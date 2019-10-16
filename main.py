@@ -37,10 +37,10 @@ class tflUpdater():
 
             finished = False
             print("Enter the routes of your journey.")
-            print("Enter X to exit")
+            print("Press enter to exit")
             while not finished:
                 line = input().title()
-                if line == 'X' or line == 'exit':
+                if line == '':
                     break
                 self.journey[line] = "Good Service"
             data = json.dumps({
